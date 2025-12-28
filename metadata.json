@@ -1,0 +1,5 @@
+{
+  "name": "IPL Auction Simulator 2026",
+  "description": "A high-fidelity replica of PlayAuctionGame.com. Real-time multiplayer IPL auction simulator with official 2026 rules, squad management, and 10-team bidding.",
+  "requestFramePermissions": []
+}
