@@ -1,10 +1,10 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IPL Auction Simulator 2026</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏏</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -37,6 +37,27 @@
         .custom-scrollbar::-webkit-scrollbar-thumb {
             background: #334155;
             border-radius: 10px;
+        }
+        .chat-bubble-tail {
+            position: relative;
+        }
+        .chat-bubble-tail::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            width: 0;
+            height: 0;
+            border: 10px solid transparent;
+        }
+        .chat-bubble-left::after {
+            left: -8px;
+            border-right-color: rgba(255, 255, 255, 0.05);
+            border-bottom: 0;
+        }
+        .chat-bubble-right::after {
+            right: -8px;
+            border-left-color: #2563eb;
+            border-bottom: 0;
         }
     </style>
 <script type="importmap">

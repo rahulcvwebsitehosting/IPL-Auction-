@@ -1,4 +1,3 @@
-
 export enum Role {
   BAT = 'BATTER',
   BOWL = 'BOWLER',
@@ -43,6 +42,14 @@ export interface ActivityLog {
   message?: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  sender: string;
+  teamId: string;
+  text: string;
+  timestamp: number;
+}
+
 export interface AuctionState {
   roomId: string;
   hostId: string; // TeamId of the creator
@@ -55,6 +62,7 @@ export interface AuctionState {
   timerDuration: number;
   isPaused: boolean;
   activity: ActivityLog[];
+  messages: ChatMessage[];
   teams: Record<string, TeamState>;
   unsoldPlayers: number[]; // Player IDs
   lastSoldInfo: {

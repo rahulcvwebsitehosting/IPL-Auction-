@@ -1,7 +1,6 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { AuctionState, Player } from '../types';
+import { AuctionState, Player, ChatMessage } from '../types';
 import { INITIAL_PLAYER_POOL } from '../constants';
 
 const SERVER_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://your-socket-server.com';
@@ -27,8 +26,6 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
   useEffect(() => {
     if (!roomId || !userTeamId) return;
 
-    // In a real environment, you'd point to your hosted backend
-    // For local testing, we connect to localhost:3001
     const socket = io(SERVER_URL);
     socketRef.current = socket;
 
@@ -36,6 +33,10 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
 
     socket.on('state-updated', (newState: AuctionState) => {
       setState(newState);
+    });
+
+    socket.on('chat-message', (msg: ChatMessage) => {
+      setState(prev => prev ? { ...prev, messages: [...prev.messages, msg].slice(-100) } : null);
     });
 
     socket.on('timer-tick', (timer: number) => {
@@ -62,6 +63,15 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
     }
   }, [roomId, state?.status]);
 
+  const sendMessage = useCallback((text: string) => {
+    if (socketRef.current && text.trim()) {
+      socketRef.current.emit('send-message', {
+        roomId,
+        message: { sender: userName, teamId: userTeamId, text }
+      });
+    }
+  }, [roomId, userName, userTeamId]);
+
   const startAuction = useCallback(() => {
     if (socketRef.current) {
       socketRef.current.emit('start-auction', roomId);
@@ -75,7 +85,6 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
   }, [roomId]);
 
   const setTimerDuration = useCallback((duration: number) => {
-    // This could also be emitted to server if desired
     console.log("Setting timer duration to", duration);
   }, []);
 
@@ -83,6 +92,7 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
     state,
     currentPlayer: state ? INITIAL_PLAYER_POOL[state.currentPlayerIndex] : null,
     placeBid,
+    sendMessage,
     startAuction,
     togglePause,
     setTimerDuration

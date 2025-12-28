@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -30,6 +29,7 @@ function createInitialState(roomId, hostId) {
     timerDuration: 15,
     isPaused: false,
     activity: [],
+    messages: [],
     teams,
     unsoldPlayers: [],
     lastSoldInfo: null
@@ -46,7 +46,6 @@ io.on('connection', (socket) => {
 
     const state = rooms.get(roomId);
     
-    // Check if team is already taken by someone else
     const team = state.teams[userTeamId];
     if (team.joinedBy && team.joinedBy !== userName) {
       socket.emit('error', 'Team already taken by another manager');
@@ -55,6 +54,24 @@ io.on('connection', (socket) => {
 
     team.joinedBy = userName;
     io.to(roomId).emit('state-updated', state);
+  });
+
+  socket.on('send-message', ({ roomId, message }) => {
+    const state = rooms.get(roomId);
+    if (!state) return;
+
+    const chatMsg = {
+      id: Math.random().toString(36).substr(2, 9),
+      sender: message.sender,
+      teamId: message.teamId,
+      text: message.text,
+      timestamp: Date.now()
+    };
+
+    state.messages.push(chatMsg);
+    if (state.messages.length > 100) state.messages.shift();
+
+    io.to(roomId).emit('chat-message', chatMsg);
   });
 
   socket.on('start-auction', (roomId) => {
@@ -74,18 +91,16 @@ io.on('connection', (socket) => {
     const player = INITIAL_PLAYER_POOL[state.currentPlayerIndex];
     const team = state.teams[teamId];
 
-    // Validation
     const minBid = state.currentBidder ? state.currentBid + 1 : state.currentBid;
     if (amount < minBid) return;
     if (team.purse < amount) return;
     if (team.squad.length >= 25) return;
     if (player.overseas && team.overseasCount >= 8) return;
-    if (state.currentBidder === teamId) return; // Cannot outbid self
+    if (state.currentBidder === teamId) return;
 
-    // Update state
     state.currentBid = amount;
     state.currentBidder = teamId;
-    state.timer = state.timerDuration; // Reset timer on every valid bid
+    state.timer = state.timerDuration;
 
     state.activity.unshift({
       id: Math.random().toString(36).substr(2, 9),
