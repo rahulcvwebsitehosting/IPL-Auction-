@@ -52,7 +52,7 @@ export interface ChatMessage {
 
 export interface AuctionState {
   roomId: string;
-  hostId: string; // TeamId of the creator
+  hostId: string;
   status: 'LOBBY' | 'AUCTION' | 'ROUND_END' | 'RESULTS';
   mode: 'MEGA' | 'MOCK';
   currentPlayerIndex: number;
@@ -60,11 +60,12 @@ export interface AuctionState {
   currentBidder: string | null;
   timer: number;
   timerDuration: number;
+  minIncrement: number; // Default 50L
   isPaused: boolean;
   activity: ActivityLog[];
   messages: ChatMessage[];
   teams: Record<string, TeamState>;
-  unsoldPlayers: number[]; // Player IDs
+  unsoldPlayers: number[];
   lastSoldInfo: {
     playerName: string;
     teamId: string | null;

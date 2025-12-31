@@ -1,7 +1,14 @@
-import { Role, TeamConfig, Player } from './types';
+// IPL Auction Simulator Constants
+// We use a .js file to ensure it's natively importable by the Node.js server.
 
-// Bug 6 Fix: Reliable IPL logo CDN links
-export const TEAMS: TeamConfig[] = [
+export const Role = {
+  BAT: 'BATTER',
+  BOWL: 'BOWLER',
+  AR: 'ALL-ROUNDER',
+  WK: 'WICKET-KEEPER'
+};
+
+export const TEAMS = [
   { id: 'CSK', name: 'Chennai Super Kings', shortName: 'CSK', color: '#FFFF35', secondaryColor: '#005CA8', logo: 'https://scores.iplt20.com/ipl-sdk/static/logos/CSK.png' },
   { id: 'MI', name: 'Mumbai Indians', shortName: 'MI', color: '#004BA0', secondaryColor: '#D1AB3E', logo: 'https://scores.iplt20.com/ipl-sdk/static/logos/MI.png' },
   { id: 'RCB', name: 'Royal Challengers Bengaluru', shortName: 'RCB', color: '#EC1C24', secondaryColor: '#2B2A29', logo: 'https://scores.iplt20.com/ipl-sdk/static/logos/RCB.png' },
@@ -14,7 +21,7 @@ export const TEAMS: TeamConfig[] = [
   { id: 'LSG', name: 'Lucknow Super Giants', shortName: 'LSG', color: '#0057E2', secondaryColor: '#FF4D4D', logo: 'https://scores.iplt20.com/ipl-sdk/static/logos/LSG.png' },
 ];
 
-export const INITIAL_PLAYER_POOL: Player[] = [
+export const INITIAL_PLAYER_POOL = [
   // BATTERS
   { id: 1, name: "Rohit Sharma", country: "India", role: Role.BAT, basePrice: 200, set: "BA1", overseas: false },
   { id: 2, name: "Virat Kohli", country: "India", role: Role.BAT, basePrice: 200, set: "BA1", overseas: false },

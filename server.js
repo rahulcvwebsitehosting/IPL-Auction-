@@ -5,8 +5,46 @@ import { INITIAL_PLAYER_POOL, TEAMS } from './constants.js';
 
 const app = express();
 const httpServer = createServer(app);
+
+// Simple health check endpoint
+app.get('/health', (req, res) => res.json({ status: 'ok', serverTime: new Date().toISOString() }));
+
+// Enhanced CORS Middleware for Express routes
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,Authorization,Accept');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 const io = new Server(httpServer, {
-  cors: { origin: "*" }
+  cors: {
+    // Dynamically allow the origin of the request to fix CORS issues in cloud IDEs
+    origin: (origin, callback) => {
+      // For development, allow all origins specifically to fix credentials issue
+      callback(null, true);
+    },
+    methods: ["GET", "POST"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  },
+  // Start with polling to establish session stability in proxied environments
+  transports: ['polling', 'websocket'],
+  allowEIO3: true,
+  pingTimeout: 60000, 
+  pingInterval: 25000,
+  connectTimeout: 45000,
+  allowUpgrades: true
 });
 
 const rooms = new Map();
@@ -27,6 +65,7 @@ function createInitialState(roomId, hostId) {
     currentBidder: null,
     timer: 15,
     timerDuration: 15,
+    minIncrement: 50,
     isPaused: false,
     activity: [],
     messages: [],
@@ -37,7 +76,16 @@ function createInitialState(roomId, hostId) {
 }
 
 io.on('connection', (socket) => {
+  const transport = socket.conn.transport.name;
+  console.log(`[Server] New connection: ${socket.id} (Transport: ${transport})`);
+
+  socket.conn.on('upgrade', () => {
+    console.log(`[Server] Connection ${socket.id} upgraded to ${socket.conn.transport.name}`);
+  });
+
   socket.on('join-room', ({ roomId, userTeamId, userName }) => {
+    if (!roomId) return;
+    console.log(`[Server] ${userName} is joining room: ${roomId}`);
     socket.join(roomId);
     
     if (!rooms.has(roomId)) {
@@ -45,14 +93,12 @@ io.on('connection', (socket) => {
     }
 
     const state = rooms.get(roomId);
-    
     const team = state.teams[userTeamId];
-    if (team.joinedBy && team.joinedBy !== userName) {
-      socket.emit('error', 'Team already taken by another manager');
-      return;
+    
+    if (team) {
+      team.joinedBy = userName;
     }
-
-    team.joinedBy = userName;
+    
     io.to(roomId).emit('state-updated', state);
   });
 
@@ -70,8 +116,18 @@ io.on('connection', (socket) => {
 
     state.messages.push(chatMsg);
     if (state.messages.length > 100) state.messages.shift();
-
+    
     io.to(roomId).emit('chat-message', chatMsg);
+  });
+
+  socket.on('update-settings', ({ roomId, settings }) => {
+    const state = rooms.get(roomId);
+    if (!state || state.hostId !== settings.hostId) return;
+
+    if (settings.minIncrement !== undefined) state.minIncrement = settings.minIncrement;
+    if (settings.timerDuration !== undefined) state.timerDuration = settings.timerDuration;
+
+    io.to(roomId).emit('state-updated', state);
   });
 
   socket.on('start-auction', (roomId) => {
@@ -91,8 +147,12 @@ io.on('connection', (socket) => {
     const player = INITIAL_PLAYER_POOL[state.currentPlayerIndex];
     const team = state.teams[teamId];
 
-    const minBid = state.currentBidder ? state.currentBid + 1 : state.currentBid;
-    if (amount < minBid) return;
+    if (!team || !player) return;
+
+    const currentPrice = state.currentBid;
+    const requiredMin = state.currentBidder ? currentPrice + state.minIncrement : currentPrice;
+    
+    if (amount < requiredMin) return;
     if (team.purse < amount) return;
     if (team.squad.length >= 25) return;
     if (player.overseas && team.overseasCount >= 8) return;
@@ -120,12 +180,22 @@ io.on('connection', (socket) => {
     state.isPaused = !state.isPaused;
     io.to(roomId).emit('state-updated', state);
   });
+
+  socket.on('disconnect', (reason) => {
+    console.log(`[Server] Socket ${socket.id} disconnected: ${reason}`);
+  });
 });
 
 function startTimer(roomId) {
-  const interval = setInterval(() => {
+  const room = rooms.get(roomId);
+  if (!room || room._timerRef) return;
+
+  room._timerRef = setInterval(() => {
     const state = rooms.get(roomId);
-    if (!state) return clearInterval(interval);
+    if (!state) {
+      clearInterval(room._timerRef);
+      return;
+    }
 
     if (state.status === 'AUCTION' && !state.isPaused) {
       if (state.timer > 0) {
@@ -189,7 +259,7 @@ function handleRoundEnd(roomId) {
 
   setTimeout(() => {
     moveToNextPlayer(roomId);
-  }, 3000);
+  }, 3500);
 }
 
 function moveToNextPlayer(roomId) {
@@ -197,20 +267,25 @@ function moveToNextPlayer(roomId) {
   if (!state) return;
 
   state.currentPlayerIndex += 1;
+  state.lastSoldInfo = null;
+  
   if (state.currentPlayerIndex >= INITIAL_PLAYER_POOL.length) {
     state.status = 'RESULTS';
+    if (state._timerRef) {
+      clearInterval(state._timerRef);
+      state._timerRef = null;
+    }
   } else {
     const nextPlayer = INITIAL_PLAYER_POOL[state.currentPlayerIndex];
     state.status = 'AUCTION';
     state.currentBid = nextPlayer.basePrice;
     state.currentBidder = null;
     state.timer = state.timerDuration;
-    state.lastSoldInfo = null;
   }
   io.to(roomId).emit('state-updated', state);
 }
 
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => {
-  console.log(`Auction Server running on port ${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`[Server] Auction Backend running on port ${PORT}`);
 });
