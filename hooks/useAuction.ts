@@ -57,9 +57,7 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
     const socket = io({
       transports: ['polling', 'websocket'],
       reconnectionAttempts: 5,
-      timeout: 10000,
-      withCredentials: true,
-      path: '/socket.io/'
+      timeout: 10000
     });
     
     socketRef.current = socket;

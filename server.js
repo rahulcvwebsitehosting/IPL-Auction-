@@ -38,16 +38,6 @@ app.use((req, res, next) => {
 });
 
 const io = new Server(httpServer, {
-  cors: {
-    // Dynamically allow the origin of the request to fix CORS issues in cloud IDEs
-    origin: (origin, callback) => {
-      // For development, allow all origins specifically to fix credentials issue
-      callback(null, true);
-    },
-    methods: ["GET", "POST"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
-  },
   // Start with polling to establish session stability in proxied environments
   transports: ['polling', 'websocket'],
   allowEIO3: true,
