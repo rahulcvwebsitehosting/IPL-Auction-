@@ -3,15 +3,6 @@ import { io, Socket } from 'socket.io-client';
 import { AuctionState, ChatMessage, TeamState, Player, ActivityLog } from '../types';
 import { INITIAL_PLAYER_POOL, TEAMS } from '../constants.js';
 
-const getSocketUrl = () => {
-  const { hostname, protocol, host, origin } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return `${protocol}//${hostname}:3001`;
-  if (host.includes('3000')) return origin.replace(/3000/g, '3001');
-  const portRegex = /:(\d+)$/;
-  if (portRegex.test(host)) return origin.replace(portRegex, ':3001');
-  return `${protocol}//${hostname}:3001`;
-};
-
 const playSound = (type: string) => {
   const sounds: Record<string, string> = {
     bid: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
@@ -63,8 +54,7 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
   useEffect(() => {
     if (!roomId || !userTeamId || isDemoMode) return;
 
-    const url = getSocketUrl();
-    const socket = io(url, {
+    const socket = io({
       transports: ['polling', 'websocket'],
       reconnectionAttempts: 5,
       timeout: 10000,
