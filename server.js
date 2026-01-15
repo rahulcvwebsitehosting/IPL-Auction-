@@ -2,9 +2,19 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { INITIAL_PLAYER_POOL, TEAMS } from './constants.js';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import { createViteRuntime } from 'vite';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const httpServer = createServer(app);
+
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.resolve(__dirname, 'dist')));
+}
 
 // Simple health check endpoint
 app.get('/health', (req, res) => res.json({ status: 'ok', serverTime: new Date().toISOString() }));
@@ -28,16 +38,6 @@ app.use((req, res, next) => {
 });
 
 const io = new Server(httpServer, {
-  cors: {
-    // Dynamically allow the origin of the request to fix CORS issues in cloud IDEs
-    origin: (origin, callback) => {
-      // For development, allow all origins specifically to fix credentials issue
-      callback(null, true);
-    },
-    methods: ["GET", "POST"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
-  },
   // Start with polling to establish session stability in proxied environments
   transports: ['polling', 'websocket'],
   allowEIO3: true,
@@ -286,6 +286,25 @@ function moveToNextPlayer(roomId) {
 }
 
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Server] Auction Backend running on port ${PORT}`);
-});
+
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await import('vite');
+    const viteDevMiddleware = (
+      await vite.createServer({
+        server: { middlewareMode: true },
+      })
+    ).middlewares;
+    app.use(viteDevMiddleware);
+  } else {
+    app.get('*', (req, res) => {
+      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    });
+  }
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Server] Auction Backend running on port ${PORT}`);
+  });
+}
+
+startServer();
