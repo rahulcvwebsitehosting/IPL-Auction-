@@ -3,15 +3,6 @@ import { io, Socket } from 'socket.io-client';
 import { AuctionState, ChatMessage, TeamState, Player, ActivityLog } from '../types';
 import { INITIAL_PLAYER_POOL, TEAMS } from '../constants.js';
 
-const getSocketUrl = () => {
-  const { hostname, protocol, host, origin } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return `${protocol}//${hostname}:3001`;
-  if (host.includes('3000')) return origin.replace(/3000/g, '3001');
-  const portRegex = /:(\d+)$/;
-  if (portRegex.test(host)) return origin.replace(portRegex, ':3001');
-  return `${protocol}//${hostname}:3001`;
-};
-
 const playSound = (type: string) => {
   const sounds: Record<string, string> = {
     bid: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
@@ -63,25 +54,27 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
   useEffect(() => {
     if (!roomId || !userTeamId || isDemoMode) return;
 
-    const url = getSocketUrl();
-    const socket = io(url, {
+    // We connect to the current origin. 
+    // In dev, Vite proxies /socket.io to port 3001.
+    // In production, the single server handles both.
+    const socket = io({
       transports: ['polling', 'websocket'],
-      reconnectionAttempts: 5,
-      timeout: 10000,
-      withCredentials: true,
+      reconnectionAttempts: 10,
+      timeout: 20000,
       path: '/socket.io/'
     });
     
     socketRef.current = socket;
 
     socket.on('connect', () => {
+      console.log('[Auction] Connected to multiplayer server');
       setError(null);
       socket.emit('join-room', { roomId, userTeamId, userName });
     });
 
     socket.on('connect_error', (err) => {
-      console.warn('[Auction] Connection error, fallback available:', err.message);
-      setError(`Backend server (port 3001) is unreachable. Would you like to play in Demo Mode instead?`);
+      console.warn('[Auction] Connection error:', err.message);
+      setError(`Cannot reach the multiplayer server. Would you like to use Demo Mode instead?`);
     });
 
     socket.on('state-updated', (newState: AuctionState) => setState(newState));
@@ -111,14 +104,12 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
         setState(prev => {
           if (!prev || prev.status !== 'AUCTION' || prev.isPaused) return prev;
           
-          // Random Bot Bidding Logic
-          const shouldBotBid = Math.random() > 0.92 && prev.timer > 2;
+          const shouldBotBid = Math.random() > 0.94 && prev.timer > 2;
           if (shouldBotBid) {
             const botTeams = TEAMS.filter(t => t.id !== userTeamId);
             const randomTeam = botTeams[Math.floor(Math.random() * botTeams.length)];
             const bidAmount = prev.currentBidder ? prev.currentBid + prev.minIncrement : prev.currentBid;
             
-            // Only bid if bot has money and isn't current bidder
             if (prev.teams[randomTeam.id].purse >= bidAmount && prev.currentBidder !== randomTeam.id) {
               playSound('bid');
               return {
@@ -141,7 +132,6 @@ export const useAuction = (roomId: string, userTeamId: string, userName: string)
             if (prev.timer === 5) playSound('timer');
             return { ...prev, timer: prev.timer - 1 };
           } else {
-            // Round End Logic
             const player = INITIAL_PLAYER_POOL[prev.currentPlayerIndex];
             const updatedTeams = { ...prev.teams };
             let lastSoldInfo = null;

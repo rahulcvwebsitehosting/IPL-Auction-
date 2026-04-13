@@ -9,42 +9,28 @@ const httpServer = createServer(app);
 // Simple health check endpoint
 app.get('/health', (req, res) => res.json({ status: 'ok', serverTime: new Date().toISOString() }));
 
-// Enhanced CORS Middleware for Express routes
+// Enhanced CORS Middleware
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,Authorization,Accept');
+  res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
 
 const io = new Server(httpServer, {
   cors: {
-    // Dynamically allow the origin of the request to fix CORS issues in cloud IDEs
-    origin: (origin, callback) => {
-      // For development, allow all origins specifically to fix credentials issue
-      callback(null, true);
-    },
+    origin: true, // Dynamically allow request origin
     methods: ["GET", "POST"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+    credentials: true
   },
-  // Start with polling to establish session stability in proxied environments
   transports: ['polling', 'websocket'],
   allowEIO3: true,
   pingTimeout: 60000, 
   pingInterval: 25000,
-  connectTimeout: 45000,
-  allowUpgrades: true
+  path: '/socket.io/'
 });
 
 const rooms = new Map();
@@ -76,16 +62,10 @@ function createInitialState(roomId, hostId) {
 }
 
 io.on('connection', (socket) => {
-  const transport = socket.conn.transport.name;
-  console.log(`[Server] New connection: ${socket.id} (Transport: ${transport})`);
-
-  socket.conn.on('upgrade', () => {
-    console.log(`[Server] Connection ${socket.id} upgraded to ${socket.conn.transport.name}`);
-  });
+  console.log(`[Server] New connection: ${socket.id}`);
 
   socket.on('join-room', ({ roomId, userTeamId, userName }) => {
     if (!roomId) return;
-    console.log(`[Server] ${userName} is joining room: ${roomId}`);
     socket.join(roomId);
     
     if (!rooms.has(roomId)) {
@@ -94,10 +74,7 @@ io.on('connection', (socket) => {
 
     const state = rooms.get(roomId);
     const team = state.teams[userTeamId];
-    
-    if (team) {
-      team.joinedBy = userName;
-    }
+    if (team) team.joinedBy = userName;
     
     io.to(roomId).emit('state-updated', state);
   });
@@ -116,7 +93,6 @@ io.on('connection', (socket) => {
 
     state.messages.push(chatMsg);
     if (state.messages.length > 100) state.messages.shift();
-    
     io.to(roomId).emit('chat-message', chatMsg);
   });
 
@@ -133,7 +109,6 @@ io.on('connection', (socket) => {
   socket.on('start-auction', (roomId) => {
     const state = rooms.get(roomId);
     if (!state) return;
-
     state.status = 'AUCTION';
     state.timer = state.timerDuration;
     startTimer(roomId);
@@ -146,17 +121,12 @@ io.on('connection', (socket) => {
 
     const player = INITIAL_PLAYER_POOL[state.currentPlayerIndex];
     const team = state.teams[teamId];
-
     if (!team || !player) return;
 
     const currentPrice = state.currentBid;
     const requiredMin = state.currentBidder ? currentPrice + state.minIncrement : currentPrice;
     
-    if (amount < requiredMin) return;
-    if (team.purse < amount) return;
-    if (team.squad.length >= 25) return;
-    if (player.overseas && team.overseasCount >= 8) return;
-    if (state.currentBidder === teamId) return;
+    if (amount < requiredMin || team.purse < amount || team.squad.length >= 25 || (player.overseas && team.overseasCount >= 8) || state.currentBidder === teamId) return;
 
     state.currentBid = amount;
     state.currentBidder = teamId;
@@ -180,10 +150,6 @@ io.on('connection', (socket) => {
     state.isPaused = !state.isPaused;
     io.to(roomId).emit('state-updated', state);
   });
-
-  socket.on('disconnect', (reason) => {
-    console.log(`[Server] Socket ${socket.id} disconnected: ${reason}`);
-  });
 });
 
 function startTimer(roomId) {
@@ -192,10 +158,7 @@ function startTimer(roomId) {
 
   room._timerRef = setInterval(() => {
     const state = rooms.get(roomId);
-    if (!state) {
-      clearInterval(room._timerRef);
-      return;
-    }
+    if (!state) return clearInterval(room._timerRef);
 
     if (state.status === 'AUCTION' && !state.isPaused) {
       if (state.timer > 0) {
@@ -212,7 +175,6 @@ function startTimer(roomId) {
 function handleRoundEnd(roomId) {
   const state = rooms.get(roomId);
   if (!state) return;
-
   const player = INITIAL_PLAYER_POOL[state.currentPlayerIndex];
   
   if (state.currentBidder) {
@@ -220,61 +182,30 @@ function handleRoundEnd(roomId) {
     winningTeam.purse -= state.currentBid;
     winningTeam.squad.push(player);
     if (player.overseas) winningTeam.overseasCount += 1;
-    
-    state.lastSoldInfo = {
-      playerName: player.name,
-      teamId: state.currentBidder,
-      amount: state.currentBid,
-      status: 'SOLD'
-    };
-    
-    state.activity.unshift({
-      id: Math.random().toString(36).substr(2, 9),
-      type: 'SOLD',
-      teamId: state.currentBidder,
-      playerName: player.name,
-      amount: state.currentBid,
-      timestamp: Date.now()
-    });
+    state.lastSoldInfo = { playerName: player.name, teamId: state.currentBidder, amount: state.currentBid, status: 'SOLD' };
+    state.activity.unshift({ id: Math.random().toString(36).substr(2, 9), type: 'SOLD', teamId: state.currentBidder, playerName: player.name, amount: state.currentBid, timestamp: Date.now() });
     io.to(roomId).emit('play-sound', 'sold');
   } else {
     state.unsoldPlayers.push(player.id);
-    state.lastSoldInfo = {
-      playerName: player.name,
-      teamId: null,
-      amount: 0,
-      status: 'UNSOLD'
-    };
-    state.activity.unshift({
-      id: Math.random().toString(36).substr(2, 9),
-      type: 'UNSOLD',
-      playerName: player.name,
-      timestamp: Date.now()
-    });
+    state.lastSoldInfo = { playerName: player.name, teamId: null, amount: 0, status: 'UNSOLD' };
+    state.activity.unshift({ id: Math.random().toString(36).substr(2, 9), type: 'UNSOLD', playerName: player.name, timestamp: Date.now() });
     io.to(roomId).emit('play-sound', 'unsold');
   }
 
   state.status = 'ROUND_END';
   io.to(roomId).emit('state-updated', state);
-
-  setTimeout(() => {
-    moveToNextPlayer(roomId);
-  }, 3500);
+  setTimeout(() => moveToNextPlayer(roomId), 3500);
 }
 
 function moveToNextPlayer(roomId) {
   const state = rooms.get(roomId);
   if (!state) return;
-
   state.currentPlayerIndex += 1;
   state.lastSoldInfo = null;
   
   if (state.currentPlayerIndex >= INITIAL_PLAYER_POOL.length) {
     state.status = 'RESULTS';
-    if (state._timerRef) {
-      clearInterval(state._timerRef);
-      state._timerRef = null;
-    }
+    if (state._timerRef) { clearInterval(state._timerRef); state._timerRef = null; }
   } else {
     const nextPlayer = INITIAL_PLAYER_POOL[state.currentPlayerIndex];
     state.status = 'AUCTION';
@@ -285,7 +216,7 @@ function moveToNextPlayer(roomId) {
   io.to(roomId).emit('state-updated', state);
 }
 
-const PORT = process.env.PORT || 3001;
+const PORT = 3001;
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Auction Backend running on port ${PORT}`);
 });
